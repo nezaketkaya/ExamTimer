@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Deneme Zamanlayıcı</title>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#101113">
+<meta name="background-color" content="#101113">
+
+<!-- iOS "Ana Ekrana Ekle" desteği -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Deneme Zamanlayıcı">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+
+<link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<style>
+  :root{
+    --bg:#101113;
+    --surface:#17181b;
+    --surface-hover:#1f2124;
+    --border:#232427;
+    --text:#e7e9eb;
+    --text-dim:#5a5f66;
+    --text-faint:#3c4046;
+    --digit:#8f959c;
+    --digit-warn:#c7ccd1;
+    --digit-critical:#f4f6f7;
+    --accent:#c9a24b;
+    --accent-dim:#7a6538;
+  }
+
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+
+  html,body{
+    margin:0; padding:0; height:100%;
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+  }
+
+  .app{
+    height:100vh;
+    width:100vw;
+    display:flex;
+    flex-direction:row;
+    padding-top:env(safe-area-inset-top);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+
+  /* ---------- main: nothing but the number ---------- */
+  .main{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    min-width:0;
+    padding:20px;
+  }
+  .digits{
+    font-family:ui-monospace,"SF Mono","Cascadia Mono","Roboto Mono",monospace;
+    font-variant-numeric:tabular-nums;
+    font-size:clamp(52px, 15vw, 168px);
+    font-weight:500;
+    letter-spacing:0.01em;
+    color:var(--digit);
+    line-height:1;
+    transition:color .6s ease, opacity .5s ease;
+    user-select:none;
+  }
+  .state-warn .digits{ color:var(--digit-warn); }
+  .state-critical .digits{ color:var(--digit-critical); }
+  .state-done .digits{ color:var(--digit-critical); animation:breathe 1.4s ease-in-out infinite; }
+  @keyframes breathe{
+    0%,100%{ opacity:1; }
+    50%{ opacity:.35; }
+  }
+
+  .state-label{
+    margin-top:16px;
+    min-height:14px;
+    font-size:12px;
+    letter-spacing:.10em;
+    text-transform:uppercase;
+    color:var(--text-faint);
+    user-select:none;
+  }
+  .state-done .state-label{ color:var(--digit-critical); font-weight:600; }
+
+  /* ---------- side: tiny control strip ---------- */
+  .side{
+    width:60px;
+    flex-shrink:0;
+    border-left:1px solid var(--border);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:16px env(safe-area-inset-right) 16px 0;
+    gap:12px;
+  }
+  .side-spacer{ flex:1; }
+  .side-btn{
+    width:38px; height:38px;
+    border-radius:10px;
+    background:transparent;
+    border:1px solid var(--border);
+    color:var(--text-dim);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    transition:background-color .15s, color .15s, border-color .15s;
+    flex-shrink:0;
+  }
+  .side-btn:hover{ background:var(--surface-hover); color:var(--text); }
+  .side-btn:active{ transform:scale(0.95); }
+  .side-btn svg{ width:16px; height:16px; }
+  .side-btn.primary{ color:var(--accent); border-color:var(--accent-dim); }
+  .side-btn.primary:hover{ background:rgba(201,162,75,0.08); }
+  .side-btn.alarm{ color:var(--digit-critical); border-color:var(--digit-critical); animation:breathe 1.4s ease-in-out infinite; }
+  .side-btn:disabled{ opacity:.35; cursor:not-allowed; }
+
+  /* ---------- settings panel ---------- */
+  .panel-overlay{
+    position:fixed; inset:0;
+    background:rgba(0,0,0,.4);
+    opacity:0; pointer-events:none;
+    transition:opacity .2s ease;
+    z-index:15;
+  }
+  .panel-overlay.show{ opacity:1; pointer-events:auto; }
+
+  .panel{
+    position:fixed; top:0; right:0; height:100vh;
+    width:min(320px, 86vw);
+    background:var(--surface);
+    border-left:1px solid var(--border);
+    transform:translateX(100%);
+    transition:transform .25s ease;
+    z-index:20;
+    display:flex; flex-direction:column;
+    padding:20px 20px 24px;
+    overflow-y:auto;
+  }
+  .panel.open{ transform:translateX(0); }
+
+  .panel-header{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:20px;
+  }
+  .panel-header span{ font-size:13px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--text-dim); }
+  .icon-x{
+    background:none; border:none; color:var(--text-dim);
+    width:30px; height:30px; border-radius:8px;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .icon-x:hover{ background:var(--surface-hover); color:var(--text); }
+  .icon-x svg{ width:16px; height:16px; }
+
+  .section-label{ font-size:11px; color:var(--text-faint); letter-spacing:.08em; text-transform:uppercase; margin:18px 0 8px; }
+  .section-label:first-of-type{ margin-top:0; }
+
+  .presets{ display:flex; flex-wrap:wrap; gap:8px; }
+  .preset{
+    background:var(--bg);
+    border:1px solid var(--border);
+    color:var(--text-dim);
+    font-size:12.5px;
+    padding:7px 12px;
+    border-radius:20px;
+    cursor:pointer;
+    transition:all .15s;
+  }
+  .preset:hover{ color:var(--text); border-color:var(--accent-dim); }
+  .preset.active{ background:rgba(201,162,75,0.1); border-color:var(--accent); color:var(--accent); }
+
+  .custom-time{
+    display:flex; align-items:center; gap:10px;
+    background:var(--bg);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:12px 14px;
+  }
+  .time-field{ flex:1; }
+  .time-field label{ font-size:11px; color:var(--text-faint); display:block; margin-bottom:3px; }
+  .time-field input{
+    width:100%; background:transparent; border:none; color:var(--text);
+    font-size:19px; font-variant-numeric:tabular-nums;
+    font-family:ui-monospace,"SF Mono","Cascadia Mono","Roboto Mono",monospace;
+    outline:none;
+  }
+  .time-sep{ color:var(--text-faint); font-size:18px; padding-bottom:2px; }
+
+  .toggle-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:11px 2px;
+    border-bottom:1px solid var(--border);
+  }
+  .toggle-row:last-child{ border-bottom:none; }
+  .toggle-row span{ font-size:13.5px; color:var(--text-dim); }
+  .switch{
+    width:38px; height:22px; border-radius:20px; background:var(--border);
+    position:relative; cursor:pointer; transition:background-color .2s; flex-shrink:0;
+  }
+  .switch.on{ background:var(--accent-dim); }
+  .switch::after{
+    content:''; position:absolute; top:2px; left:2px;
+    width:18px; height:18px; border-radius:50%; background:var(--text-dim);
+    transition:transform .2s, background-color .2s;
+  }
+  .switch.on::after{ transform:translateX(16px); background:var(--accent); }
+
+  .panel-note{ margin-top:auto; padding-top:18px; font-size:11px; color:var(--text-faint); line-height:1.5; }
+
+  @media (max-width: 380px){
+    .side{ width:52px; }
+    .side-btn{ width:34px; height:34px; }
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <div class="main">
+    <div class="digits" id="digits">02:10:00</div>
+    <div class="state-label" id="subLabel">başlamaya hazır</div>
+  </div>
+
+  <div class="side">
+    <button class="side-btn" id="settingsBtn" title="Ayarlar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+    <div class="side-spacer"></div>
+    <button class="side-btn primary" id="startBtn" title="Başlat">
+      <svg id="startIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+    </button>
+    <button class="side-btn" id="resetBtn" title="Sıfırla">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+    </button>
+  </div>
+
+  <div class="panel-overlay" id="panelOverlay"></div>
+  <div class="panel" id="panel">
+    <div class="panel-header">
+      <span>Ayarlar</span>
+      <button class="icon-x" id="closePanel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+
+    <div class="section-label">Süre</div>
+    <div class="presets" id="presets"></div>
+    <div style="height:12px"></div>
+    <div class="custom-time">
+      <div class="time-field">
+        <label>Saat</label>
+        <input type="number" id="hourInput" min="0" max="6" value="2">
+      </div>
+      <div class="time-sep">:</div>
+      <div class="time-field">
+        <label>Dakika</label>
+        <input type="number" id="minInput" min="0" max="59" value="10">
+      </div>
+    </div>
+
+    <div class="section-label">Bildirim</div>
+    <div class="toggle-row">
+      <span>Ses (her 30 sn)</span>
+      <div class="switch on" id="soundToggle"></div>
+    </div>
+    <div class="toggle-row">
+      <span>Titreşim</span>
+      <div class="switch" id="vibrateToggle"></div>
+    </div>
+
+    <div class="panel-note">Son 5 dakika ekran biraz açılır, son 1 dakika daha da açılır — göz ucuyla fark edilsin diye. Süre bitince alarm çalar.</div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  const app = document.getElementById('app');
+  const digitsEl = document.getElementById('digits');
+  const subLabel = document.getElementById('subLabel');
+  const hourInput = document.getElementById('hourInput');
+  const minInput = document.getElementById('minInput');
+  const startBtn = document.getElementById('startBtn');
+  const startIcon = document.getElementById('startIcon');
+  const resetBtn = document.getElementById('resetBtn');
+  const settingsBtn = document.getElementById('settingsBtn');
+  const closePanel = document.getElementById('closePanel');
+  const panel = document.getElementById('panel');
+  const panelOverlay = document.getElementById('panelOverlay');
+  const soundToggle = document.getElementById('soundToggle');
+  const vibrateToggle = document.getElementById('vibrateToggle');
+  const presetsEl = document.getElementById('presets');
+
+  const ICON_PLAY = '<path d="M8 5v14l11-7z"/>';
+  const ICON_PAUSE = '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>';
+  const ICON_STOP = '<path d="M6 6h12v12H6z"/>';
+
+  const PRESETS = [
+    {label:'TYT · 165 dk', min:165},
+    {label:'AYT · 180 dk', min:180},
+    {label:'YDS · 180 dk', min:180},
+    {label:'KPSS · 130 dk', min:130},
+    {label:'Özel', min:null}
+  ];
+
+  let soundOn = true;
+  let vibrateOn = false;
+  let totalSeconds = 130*60;
+  let endTime = null;
+  let running = false;
+  let tickHandle = null;
+  let lastBeepAtElapsedSec = -1;
+  let prevRemainingSec = null;
+  let audioCtx = null;
+  let alarmInterval = null;
+  let alarmRinging = false;
+
+  function buildPresets(){
+    presetsEl.innerHTML = '';
+    PRESETS.forEach((p) => {
+      const chip = document.createElement('div');
+      chip.className = 'preset';
+      chip.textContent = p.label;
+      chip.addEventListener('click', () => {
+        document.querySelectorAll('.preset').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        if(p.min !== null){
+          hourInput.value = Math.floor(p.min/60);
+          minInput.value = p.min % 60;
+          syncTotalFromInputs();
+        }
+      });
+      presetsEl.appendChild(chip);
+    });
+  }
+  buildPresets();
+
+  function syncTotalFromInputs(){
+    const h = Math.max(0, parseInt(hourInput.value||'0',10) || 0);
+    const m = Math.max(0, Math.min(59, parseInt(minInput.value||'0',10) || 0));
+    totalSeconds = h*3600 + m*60;
+    if(totalSeconds <= 0) totalSeconds = 60;
+    updateDisplay(totalSeconds*1000);
+  }
+  hourInput.addEventListener('input', () => { document.querySelectorAll('.preset').forEach(c=>c.classList.remove('active')); syncTotalFromInputs(); });
+  minInput.addEventListener('input', () => { document.querySelectorAll('.preset').forEach(c=>c.classList.remove('active')); syncTotalFromInputs(); });
+
+  function fmt(sec){
+    sec = Math.max(0, sec);
+    const h = Math.floor(sec/3600);
+    const m = Math.floor((sec%3600)/60);
+    const s = Math.floor(sec%60);
+    return [h,m,s].map(v => String(v).padStart(2,'0')).join(':');
+  }
+
+  function ensureAudio(){
+    if(!audioCtx){
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if(Ctx) audioCtx = new Ctx();
+    }
+    if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+
+  function beep(freq, duration, delay, gainLevel){
+    const ctx = ensureAudio();
+    if(!ctx) return;
+    const t0 = ctx.currentTime + (delay||0);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, t0);
+    gain.gain.setValueAtTime(0, t0);
+    gain.gain.linearRampToValueAtTime(gainLevel||0.18, t0+0.01);
+    gain.gain.linearRampToValueAtTime(0, t0+duration);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0+duration+0.02);
+  }
+
+  function shortBeep(){
+    if(soundOn) beep(880, 0.12, 0, 0.16);
+    if(vibrateOn && navigator.vibrate) navigator.vibrate(180);
+  }
+
+  function alarmBeepBurst(){
+    if(soundOn){
+      beep(660, 0.18, 0, 0.22);
+      beep(880, 0.22, 0.22, 0.22);
+    }
+    if(vibrateOn && navigator.vibrate) navigator.vibrate([220,120,220]);
+  }
+
+  function updateDisplay(remainingMs){
+    const remainingSec = Math.max(0, Math.ceil(remainingMs/1000));
+    digitsEl.textContent = fmt(remainingSec);
+
+    app.classList.remove('state-warn','state-critical');
+    if(remainingSec <= 60 && remainingSec > 0){
+      app.classList.add('state-critical');
+      subLabel.textContent = 'son 1 dakika';
+    } else if(remainingSec <= 300 && remainingSec > 0){
+      app.classList.add('state-warn');
+      subLabel.textContent = 'son 5 dakika';
+    } else if(!running){
+      subLabel.textContent = 'başlamaya hazır';
+    } else {
+      subLabel.textContent = 'devam ediyor';
+    }
+  }
+
+  function tick(){
+    const now = Date.now();
+    const remainingMs = endTime - now;
+
+    if(remainingMs <= 0){
+      finish();
+      return;
+    }
+
+    updateDisplay(remainingMs);
+
+    const remainingSec = Math.max(0, Math.ceil(remainingMs/1000));
+    if(prevRemainingSec === null) prevRemainingSec = remainingSec;
+    if(remainingSec !== prevRemainingSec){
+      prevRemainingSec = remainingSec;
+      const elapsedSec = totalSeconds - remainingSec;
+      if(elapsedSec > 0 && elapsedSec % 30 === 0 && elapsedSec !== lastBeepAtElapsedSec){
+        lastBeepAtElapsedSec = elapsedSec;
+        shortBeep();
+      }
+    }
+  }
+
+  function setStartIcon(kind){
+    startBtn.classList.remove('alarm');
+    if(kind === 'play') startIcon.outerHTML = '<svg id="startIcon" viewBox="0 0 24 24" fill="currentColor">'+ICON_PLAY+'</svg>';
+    else if(kind === 'pause') startIcon.outerHTML = '<svg id="startIcon" viewBox="0 0 24 24" fill="currentColor">'+ICON_PAUSE+'</svg>';
+    else if(kind === 'stop'){
+      startIcon.outerHTML = '<svg id="startIcon" viewBox="0 0 24 24" fill="currentColor">'+ICON_STOP+'</svg>';
+      startBtn.classList.add('alarm');
+    }
+  }
+
+  function finish(){
+    running = false;
+    clearInterval(tickHandle);
+    digitsEl.textContent = '00:00:00';
+    app.classList.remove('state-warn');
+    app.classList.add('state-critical','state-done');
+    subLabel.textContent = 'SÜRE DOLDU';
+    setStartIcon('stop');
+    startBtn.title = 'Alarmı durdur';
+    startBtn.disabled = false;
+    resetBtn.disabled = true;
+    alarmRinging = true;
+    alarmBeepBurst();
+    alarmInterval = setInterval(alarmBeepBurst, 1400);
+  }
+
+  function stopAlarm(){
+    clearInterval(alarmInterval);
+    alarmRinging = false;
+    resetBtn.disabled = false;
+    resetTimer();
+  }
+
+  function startTimer(){
+    ensureAudio();
+    hourInput.disabled = true; minInput.disabled = true;
+    document.querySelectorAll('.preset').forEach(c=>c.style.pointerEvents='none');
+
+    endTime = Date.now() + totalSeconds*1000;
+    lastBeepAtElapsedSec = -1;
+    prevRemainingSec = null;
+    running = true;
+    startBtn.disabled = true;
+    startBtn.title = 'Çalışıyor';
+    tickHandle = setInterval(tick, 250);
+    tick();
+  }
+
+  function resetTimer(){
+    running = false;
+    clearInterval(tickHandle);
+    clearInterval(alarmInterval);
+    alarmRinging = false;
+    lastBeepAtElapsedSec = -1;
+    prevRemainingSec = null;
+    endTime = null;
+    hourInput.disabled = false; minInput.disabled = false;
+    document.querySelectorAll('.preset').forEach(c=>c.style.pointerEvents='auto');
+    resetBtn.disabled = false;
+    startBtn.disabled = false;
+    setStartIcon('play');
+    startBtn.title = 'Başlat';
+    app.classList.remove('state-warn','state-critical','state-done');
+    syncTotalFromInputs();
+    subLabel.textContent = 'başlamaya hazır';
+  }
+
+  startBtn.addEventListener('click', () => {
+    if(alarmRinging){ stopAlarm(); return; }
+    if(!running) startTimer();
+  });
+
+  resetBtn.addEventListener('click', () => { if(!alarmRinging) resetTimer(); });
+
+  soundToggle.addEventListener('click', () => {
+    soundOn = !soundOn;
+    soundToggle.classList.toggle('on', soundOn);
+  });
+  vibrateToggle.addEventListener('click', () => {
+    vibrateOn = !vibrateOn;
+    vibrateToggle.classList.toggle('on', vibrateOn);
+    if(vibrateOn && !navigator.vibrate){
+      vibrateToggle.classList.remove('on');
+      vibrateOn = false;
+      alert('Bu cihaz/tarayıcı titreşimi desteklemiyor.');
+    }
+  });
+
+  function openPanel(){ panel.classList.add('open'); panelOverlay.classList.add('show'); }
+  function closePanelFn(){ panel.classList.remove('open'); panelOverlay.classList.remove('show'); }
+  settingsBtn.addEventListener('click', openPanel);
+  closePanel.addEventListener('click', closePanelFn);
+  panelOverlay.addEventListener('click', closePanelFn);
+
+  // init
+  syncTotalFromInputs();
+  updateDisplay(totalSeconds*1000);
+
+  // çevrimdışı kullanım için service worker (yalnızca https/localhost üzerinde çalışır)
+  if('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')){
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
+})();
+</script>
+</body>
+</html>
